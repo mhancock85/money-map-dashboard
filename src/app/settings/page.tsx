@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/Sidebar";
 import { GlassCard } from "@/components/GlassCard";
-import { Settings, User, Bell, Lock } from 'lucide-react';
+import { Bell, Lock } from 'lucide-react';
 
 export default function SettingsPage() {
   return (

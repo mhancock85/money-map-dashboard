@@ -16,6 +16,7 @@ export type Database = {
           created_at: string
           id: string
           merchant_pattern: string
+          owner_id: string
         }
         Insert: {
           category: string
@@ -23,6 +24,7 @@ export type Database = {
           created_at?: string
           id?: string
           merchant_pattern: string
+          owner_id: string
         }
         Update: {
           category?: string
@@ -30,29 +32,49 @@ export type Database = {
           created_at?: string
           id?: string
           merchant_pattern?: string
+          owner_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "category_mappings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       profiles: {
         Row: {
+          coach_id: string | null
           created_at: string
           full_name: string | null
           id: string
           role: string | null
         }
         Insert: {
+          coach_id?: string | null
           created_at?: string
           full_name?: string | null
           id: string
           role?: string | null
         }
         Update: {
+          coach_id?: string | null
           created_at?: string
           full_name?: string | null
           id?: string
           role?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       statements: {
         Row: {
@@ -61,7 +83,7 @@ export type Database = {
           created_at: string
           filename: string
           id: string
-          status: string | null
+          status: string
           storage_path: string
         }
         Insert: {
@@ -70,7 +92,7 @@ export type Database = {
           created_at?: string
           filename: string
           id?: string
-          status?: string | null
+          status?: string
           storage_path: string
         }
         Update: {
@@ -79,7 +101,7 @@ export type Database = {
           created_at?: string
           filename?: string
           id?: string
-          status?: string | null
+          status?: string
           storage_path?: string
         }
         Relationships: [
@@ -103,8 +125,8 @@ export type Database = {
           created_at: string
           description: string
           id: string
-          is_reviewed: boolean | null
-          needs_homework: boolean | null
+          is_reviewed: boolean
+          needs_homework: boolean
           statement_id: string
           transaction_date: string
         }
@@ -118,8 +140,8 @@ export type Database = {
           created_at?: string
           description: string
           id?: string
-          is_reviewed?: boolean | null
-          needs_homework?: boolean | null
+          is_reviewed?: boolean
+          needs_homework?: boolean
           statement_id: string
           transaction_date: string
         }
@@ -133,8 +155,8 @@ export type Database = {
           created_at?: string
           description?: string
           id?: string
-          is_reviewed?: boolean | null
-          needs_homework?: boolean | null
+          is_reviewed?: boolean
+          needs_homework?: boolean
           statement_id?: string
           transaction_date?: string
         }

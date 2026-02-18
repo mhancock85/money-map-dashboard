@@ -13,7 +13,7 @@ export default function InsightsPage() {
             <Sparkles className="text-lime w-8 h-8" />
             Bespoke Intelligence
           </h1>
-          <p className="text-slate-400">Deep-dive insights from your statements and Marcia's expertise.</p>
+          <p className="text-slate-400">Deep-dive insights from your statements and Marcia&apos;s expertise.</p>
         </header>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
@@ -31,7 +31,7 @@ export default function InsightsPage() {
                 <Zap className="text-emerald-400 w-5 h-5 mt-1" />
                 <div>
                   <p className="font-bold text-emerald-400 underline underline-offset-4 decoration-emerald-500/30">Savings Streak</p>
-                  <p className="text-sm text-slate-300">"Emergency Fund" milestone reached! You've successfully hit your 3-month buffer target.</p>
+                  <p className="text-sm text-slate-300">&quot;Emergency Fund&quot; milestone reached! You&apos;ve successfully hit your 3-month buffer target.</p>
                 </div>
               </div>
             </div>
@@ -51,7 +51,7 @@ export default function InsightsPage() {
                 <AlertCircle className="text-red-400 w-5 h-5 mt-1" />
                 <div>
                   <p className="font-bold text-red-400 underline underline-offset-4 decoration-red-500/30">Forgotten Sub</p>
-                  <p className="text-sm text-slate-300">A £15.99 charge from "CloudStore" appeared. It looks unused in the last 6 months.</p>
+                  <p className="text-sm text-slate-300">A £15.99 charge from &quot;CloudStore&quot; appeared. It looks unused in the last 6 months.</p>
                 </div>
               </div>
             </div>
@@ -88,11 +88,11 @@ export default function InsightsPage() {
           </GlassCard>
         </div>
 
-        {/* Coach's Long-form Advice */}
+        {/* Coach strategy note */}
         <GlassCard title="Marcia's Strategy Note" className="bg-lime/5 border-lime/20 border-l-4">
           <div className="prose prose-invert max-w-none">
             <p className="text-lg text-slate-200 leading-relaxed italic">
-              "Looking at your progress for the wedding fund, you're currently 85% on track. If we can tighten up the 'dining out' category just by £100/month over the next quarter, we'll actually hit the honeymoon goal two months early. Let's discuss this pivot in our next session on Tuesday."
+              &quot;Looking at your progress for the wedding fund, you&apos;re currently 85% on track. If we can tighten up the &apos;dining out&apos; category just by £100/month over the next quarter, we&apos;ll actually hit the honeymoon goal two months early. Let&apos;s discuss this pivot in our next session on Tuesday.&quot;
             </p>
             <div className="mt-6 flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-lime/20 flex items-center justify-center text-lime font-bold">

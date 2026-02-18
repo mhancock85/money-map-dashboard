@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/Sidebar";
 import { GlassCard } from "@/components/GlassCard";
-import { AlertCircle, HelpCircle, Save, CheckCircle2 } from 'lucide-react';
+import { HelpCircle, Save, CheckCircle2 } from 'lucide-react';
 
 export default function HomeworkPage() {
   return (
@@ -32,7 +32,7 @@ export default function HomeworkPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-slate-500 uppercase font-bold mb-1">Coach Note</p>
-                    <p className="text-sm text-orange-400 italic">"Is this a business office supply or personal?"</p>
+                    <p className="text-sm text-orange-400 italic">&quot;Is this a business office supply or personal?&quot;</p>
                   </div>
                 </div>
 
@@ -77,7 +77,7 @@ export default function HomeworkPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-slate-500 uppercase font-bold mb-1">Coach Note</p>
-                    <p className="text-sm text-slate-400 italic">"Unrecognized merchant. What was this?"</p>
+                    <p className="text-sm text-slate-400 italic">&quot;Unrecognized merchant. What was this?&quot;</p>
                   </div>
                 </div>
 
@@ -119,7 +119,7 @@ export default function HomeworkPage() {
                   </div>
                   <div>
                     <p className="font-bold">Shell Petrol</p>
-                    <p className="text-xs text-slate-400">Resolved as: Essential • "Commute to site"</p>
+                    <p className="text-xs text-slate-400">Resolved as: Essential • &quot;Commute to site&quot;</p>
                   </div>
                 </div>
                 <div className="text-right">
