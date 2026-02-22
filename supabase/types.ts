@@ -48,6 +48,7 @@ export type Database = {
         Row: {
           coach_id: string | null
           created_at: string
+          default_currency: string
           full_name: string | null
           id: string
           role: string | null
@@ -55,6 +56,7 @@ export type Database = {
         Insert: {
           coach_id?: string | null
           created_at?: string
+          default_currency?: string
           full_name?: string | null
           id: string
           role?: string | null
@@ -62,6 +64,7 @@ export type Database = {
         Update: {
           coach_id?: string | null
           created_at?: string
+          default_currency?: string
           full_name?: string | null
           id?: string
           role?: string | null
@@ -81,6 +84,7 @@ export type Database = {
           client_id: string
           coach_notes: string | null
           created_at: string
+          currency: string
           filename: string
           id: string
           status: string
@@ -90,6 +94,7 @@ export type Database = {
           client_id: string
           coach_notes?: string | null
           created_at?: string
+          currency?: string
           filename: string
           id?: string
           status?: string
@@ -99,6 +104,7 @@ export type Database = {
           client_id?: string
           coach_notes?: string | null
           created_at?: string
+          currency?: string
           filename?: string
           id?: string
           status?: string

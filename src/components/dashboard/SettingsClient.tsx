@@ -17,13 +17,30 @@ import {
   LogOut,
   Loader2,
   UserCog,
+  Coins,
 } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+
+const CURRENCY_OPTIONS = [
+  { code: "GBP", label: "GBP (£)", symbol: "£" },
+  { code: "USD", label: "USD ($)", symbol: "$" },
+  { code: "EUR", label: "EUR (€)", symbol: "€" },
+  { code: "AUD", label: "AUD (A$)", symbol: "A$" },
+  { code: "CAD", label: "CAD (C$)", symbol: "C$" },
+  { code: "CHF", label: "CHF (Fr)", symbol: "Fr" },
+  { code: "SAR", label: "SAR (﷼)", symbol: "﷼" },
+  { code: "AED", label: "AED (د.إ)", symbol: "د.إ" },
+  { code: "NZD", label: "NZD (NZ$)", symbol: "NZ$" },
+  { code: "ZAR", label: "ZAR (R)", symbol: "R" },
+  { code: "SGD", label: "SGD (S$)", symbol: "S$" },
+  { code: "HKD", label: "HKD (HK$)", symbol: "HK$" },
+] as const;
 
 interface SettingsClientProps {
   fullName: string;
   email: string;
   role: string;
+  defaultCurrency: string;
   coachName: string | null;
   memberSince: string;
   statementsCount: number;
@@ -56,6 +73,7 @@ export function SettingsClient({
   fullName: initialFullName,
   email,
   role,
+  defaultCurrency: initialCurrency,
   coachName,
   memberSince,
   statementsCount,
@@ -72,6 +90,10 @@ export function SettingsClient({
     text: string;
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Currency state
+  const [currency, setCurrency] = useState(initialCurrency);
+  const [isSavingCurrency, setIsSavingCurrency] = useState(false);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -141,6 +163,42 @@ export function SettingsClient({
       handleSave();
     } else if (e.key === "Escape") {
       handleCancel();
+    }
+  }
+
+  async function handleCurrencyChange(newCurrency: string) {
+    if (newCurrency === currency) return;
+
+    setIsSavingCurrency(true);
+    setSaveMessage(null);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        setSaveMessage({ type: "error", text: "Session expired. Please log in again." });
+        setIsSavingCurrency(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ default_currency: newCurrency })
+        .eq("id", user.id);
+
+      if (error) {
+        setSaveMessage({ type: "error", text: `Currency update failed: ${error.message}` });
+      } else {
+        setCurrency(newCurrency);
+        setSaveMessage({ type: "success", text: `Default currency updated to ${newCurrency}.` });
+      }
+    } catch {
+      setSaveMessage({ type: "error", text: "An unexpected error occurred." });
+    } finally {
+      setIsSavingCurrency(false);
     }
   }
 
@@ -315,6 +373,38 @@ export function SettingsClient({
                   </div>
                 </div>
               ))}
+            </div>
+          </GlassCard>
+
+          {/* Default Currency */}
+          <GlassCard title="Default Currency">
+            <div className="flex items-center justify-between p-4 rounded-xl bg-glass border border-glass-border">
+              <div className="flex items-center gap-3">
+                <Coins className="w-5 h-5 text-lime" />
+                <div>
+                  <p className="font-medium">Statement Currency</p>
+                  <p className="text-sm text-slate-500">
+                    Pre-selected when uploading new statements.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {isSavingCurrency && (
+                  <Loader2 className="w-4 h-4 text-lime animate-spin" />
+                )}
+                <select
+                  value={currency}
+                  onChange={(e) => handleCurrencyChange(e.target.value)}
+                  disabled={isSavingCurrency}
+                  className="bg-glass border border-glass-border rounded-lg px-3 py-2 text-sm font-medium focus:border-lime focus:outline-none focus:ring-1 focus:ring-lime/30 disabled:opacity-50 cursor-pointer"
+                >
+                  {CURRENCY_OPTIONS.map((opt) => (
+                    <option key={opt.code} value={opt.code} className="bg-forest">
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </GlassCard>
 

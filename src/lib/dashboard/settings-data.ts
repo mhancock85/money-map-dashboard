@@ -5,6 +5,7 @@ export interface ProfileData {
   fullName: string;
   email: string;
   role: string;
+  defaultCurrency: string;
   coachName: string | null;
   memberSince: string;
   statementsCount: number;
@@ -22,7 +23,7 @@ export async function getProfileData(
     await Promise.all([
       supabase
         .from("profiles")
-        .select("full_name, role, coach_id, created_at")
+        .select("full_name, role, coach_id, created_at, default_currency")
         .eq("id", userId)
         .maybeSingle(),
       supabase
@@ -45,6 +46,7 @@ export async function getProfileData(
       fullName: userEmail,
       email: userEmail,
       role: "client",
+      defaultCurrency: "GBP",
       coachName: null,
       memberSince: new Date().toISOString(),
       statementsCount: 0,
@@ -57,6 +59,7 @@ export async function getProfileData(
   const profile = profileResult.data;
   const fullName = profile?.full_name?.trim() || userEmail;
   const role = profile?.role || "client";
+  const defaultCurrency = profile?.default_currency || "GBP";
   const memberSince = profile?.created_at || new Date().toISOString();
 
   // If the user has a coach, fetch the coach's name
@@ -74,6 +77,7 @@ export async function getProfileData(
     fullName,
     email: userEmail,
     role,
+    defaultCurrency,
     coachName,
     memberSince,
     statementsCount: statementsResult.count ?? 0,
