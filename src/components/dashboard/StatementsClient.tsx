@@ -244,7 +244,7 @@ export function StatementsClient({
           status: isPdf ? "pending_processing" : "uploaded",
           currency: uploadCurrency,
         })
-        .select("id, filename, status, currency, created_at")
+        .select("id, filename, storage_path, status, currency, created_at")
         .single();
 
       if (stmtError || !stmt) {
@@ -285,6 +285,7 @@ export function StatementsClient({
       const newStatement: StatementWithCounts = {
         id: stmt.id,
         filename: stmt.filename,
+        storagePath: stmt.storage_path,
         status: stmt.status,
         currency: stmt.currency,
         createdAt: stmt.created_at,
@@ -732,7 +733,7 @@ export function StatementsClient({
 
                     <button
                       onClick={() =>
-                        handleDelete(stmt.id)
+                        handleDelete(stmt.id, stmt.storagePath)
                       }
                       disabled={isDeleting === stmt.id}
                       className="p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"

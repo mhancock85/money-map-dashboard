@@ -6,6 +6,7 @@ import { Database } from "../../../supabase/types";
 export interface StatementWithCounts {
   id: string;
   filename: string;
+  storagePath: string;
   status: string;
   currency: string;
   createdAt: string;
@@ -40,7 +41,7 @@ export async function getStatementsData(
       .maybeSingle(),
     supabase
       .from("statements")
-      .select("id, filename, status, currency, created_at")
+      .select("id, filename, storage_path, status, currency, created_at")
       .eq("client_id", userId)
       .order("created_at", { ascending: false }),
   ]);
@@ -95,6 +96,7 @@ export async function getStatementsData(
     return {
       id: s.id,
       filename: s.filename,
+      storagePath: s.storage_path,
       status: s.status,
       currency: s.currency,
       createdAt: s.created_at,
