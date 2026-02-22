@@ -50,6 +50,23 @@ function clampPercent(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
+function formatAxisCurrency(value: number): string {
+  // Round to sensible increments for chart axes
+  let rounded: number;
+  if (Math.abs(value) >= 10000) {
+    // Round to nearest 1000 for large values
+    rounded = Math.round(value / 1000) * 1000;
+  } else if (Math.abs(value) >= 1000) {
+    // Round to nearest 500 for medium values
+    rounded = Math.round(value / 500) * 500;
+  } else {
+    // Round to nearest 100 for smaller values
+    rounded = Math.round(value / 100) * 100;
+  }
+
+  return currencyFormatter.format(rounded);
+}
+
 export function OverviewClient({
   fullName,
   netWorth,
@@ -144,9 +161,9 @@ export function OverviewClient({
 
         <div className="mb-10">
           <GlassCard title="Wealth Trajectory & Cashflow">
-            <div className="h-[350px] w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData}>
+            <div className="h-[350px] w-full pt-4" suppressHydrationWarning>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
                   <defs>
                     <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#D4F23E" stopOpacity={0.8} />
@@ -166,6 +183,8 @@ export function OverviewClient({
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: "#94a3b8", fontSize: 12 }}
+                    width={80}
+                    tickFormatter={formatAxisCurrency}
                   />
                   <YAxis
                     yAxisId="right"
@@ -173,9 +192,15 @@ export function OverviewClient({
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: "#D4F23E", fontSize: 12 }}
-                    domain={["dataMin - 5000", "dataMax + 5000"]}
+                    width={80}
+                    domain={[
+                      (dataMin: number) => Math.floor(dataMin - 1000),
+                      (dataMax: number) => Math.ceil(dataMax + 1000)
+                    ]}
+                    tickFormatter={formatAxisCurrency}
                   />
                   <Tooltip
+                    cursor={{ fill: "transparent" }}
                     contentStyle={{
                       backgroundColor: "#0A1F1C",
                       borderColor: "#1A2E2A",

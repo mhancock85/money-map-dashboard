@@ -15,7 +15,21 @@ import {
   Trash2,
   Clock,
   X,
+  Tag,
+  Pencil,
+  Check,
+  Copy,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
+import {
+  CATEGORY_TAXONOMY,
+  normaliseCategory,
+  getParentCategory,
+  getCategoryColour,
+} from "@/lib/dashboard/categories";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import {
   parseCSV,
@@ -40,12 +54,29 @@ const CURRENCY_OPTIONS = [
   { code: "ZAR", label: "ZAR (R)", symbol: "R" },
   { code: "SGD", label: "SGD (S$)", symbol: "S$" },
   { code: "HKD", label: "HKD (HK$)", symbol: "HK$" },
+  { code: "BRL", label: "BRL (R$)", symbol: "R$" },
 ] as const;
 
 const ACCEPTED_TYPES = [".csv", ".pdf"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const PREVIEW_ROWS = 5;
 const TRANSACTIONS_PAGE_SIZE = 20;
+
+/** Extract a merchant pattern from a raw description for category_mappings. */
+function extractMerchantPattern(description: string): string {
+  const noise = [
+    "payment", "transfer", "direct debit", "standing order", "card",
+    "pos", "purchase", "contactless", "debit", "credit", "ref",
+    "to", "from", "gbp", "usd", "eur",
+  ];
+  const words = description
+    .replace(/[^a-zA-Z0-9\s&'.-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !noise.includes(w.toLowerCase()));
+  if (words.length === 0) return description.trim().slice(0, 30).toLowerCase();
+  if (words[0] && words[0].length >= 6) return words[0].toLowerCase();
+  return words.slice(0, 3).join(" ").toLowerCase();
+}
 
 // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -115,10 +146,31 @@ export function StatementsClient({
   const [statements, setStatements] = useState(initialStatements);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedTransactions, setExpandedTransactions] = useState<
-    Array<{ date: string; description: string; amount: number }>
+    Array<{ id: string; date: string; description: string; amount: number; category: string | null; subcategory: string | null; needsHomework: boolean }>
   >([]);
   const [expandedPage, setExpandedPage] = useState(0);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [savingCategoryId, setSavingCategoryId] = useState<string | null>(null);
+  const [pendingChange, setPendingChange] = useState<{
+    txId: string;
+    subcategory: string;
+    parentCategory: string;
+    description: string;
+    matchCount: number;
+  } | null>(null);
+
+  // Filter state
+  const [filterDate, setFilterDate] = useState("");
+  const [filterDescription, setFilterDescription] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterSubcategory, setFilterSubcategory] = useState("");
+
+  // Sort state
+  type SortField = "date" | "description" | "category" | "subcategory" | "amount";
+  type SortDir = "asc" | "desc" | null;
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
 
   // Upload flow state
   const [uploadPhase, setUploadPhase] = useState<
@@ -130,6 +182,7 @@ export function StatementsClient({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
 
   // Feedback
   const [message, setMessage] = useState<{
@@ -251,20 +304,47 @@ export function StatementsClient({
         throw new Error(`Statement record failed: ${stmtError?.message}`);
       }
 
-      // 3. For CSV: batch-insert transactions
+      // 3. For CSV: AI categorize + batch-insert transactions
       let txCount = 0;
       let totalIn = 0;
       let totalOut = 0;
+      let aiCategorizedCount = 0;
 
       if (!isPdf && parsedResult) {
-        const rows = parsedResult.transactions.map((tx) => ({
-          statement_id: stmt.id,
-          client_id: userId,
-          transaction_date: tx.date,
-          description: tx.description,
-          amount: tx.amount,
-          needs_homework: true, // Flag all for initial review
-        }));
+        // Call AI categorization API
+        const categorizationResponse = await fetch("/api/categorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transactions: parsedResult.transactions }),
+        });
+
+        if (!categorizationResponse.ok) {
+          console.warn("AI categorization failed, proceeding without categories");
+        }
+
+        const { categorizations } = await categorizationResponse.json();
+
+        // Build transaction rows with AI categorization
+        const rows = parsedResult.transactions.map((tx) => {
+          const key = `${tx.date}-${tx.description}`;
+          const aiResult = categorizations?.[key];
+
+          if (aiResult && !aiResult.needsHomework) {
+            aiCategorizedCount++;
+          }
+
+          return {
+            statement_id: stmt.id,
+            client_id: userId,
+            transaction_date: tx.date,
+            description: tx.description,
+            amount: tx.amount,
+            category: aiResult?.category ? normaliseCategory(aiResult.category) : null,
+            subcategory: aiResult?.subcategory || null,
+            confidence_score: aiResult?.confidence || null,
+            needs_homework: aiResult ? aiResult.needsHomework : true,
+          };
+        });
 
         const { error: txError } = await supabase
           .from("transactions")
@@ -296,11 +376,14 @@ export function StatementsClient({
 
       setStatements((prev) => [newStatement, ...prev]);
       setUploadPhase("done");
+
       setMessage({
         type: "success",
         text: isPdf
           ? `${selectedFile.name} uploaded. PDF processing will be available soon.`
-          : `${selectedFile.name} uploaded — ${txCount} transactions imported.`,
+          : aiCategorizedCount > 0
+            ? `${selectedFile.name} uploaded — ${txCount} transactions imported, ${aiCategorizedCount} auto-categorized by AI.`
+            : `${selectedFile.name} uploaded — ${txCount} transactions imported.`,
       });
 
       // Reset after a brief pause
@@ -341,7 +424,7 @@ export function StatementsClient({
       const supabase = createBrowserSupabaseClient();
       const { data, error } = await supabase
         .from("transactions")
-        .select("transaction_date, description, amount")
+        .select("id, transaction_date, description, amount, category, subcategory, needs_homework")
         .eq("statement_id", statementId)
         .order("transaction_date", { ascending: false });
 
@@ -350,9 +433,13 @@ export function StatementsClient({
       } else {
         setExpandedTransactions(
           (data ?? []).map((tx) => ({
+            id: tx.id,
             date: tx.transaction_date,
             description: tx.description,
             amount: Number(tx.amount),
+            category: tx.category ? normaliseCategory(tx.category) : null,
+            subcategory: tx.subcategory || null,
+            needsHomework: tx.needs_homework,
           }))
         );
       }
@@ -363,9 +450,161 @@ export function StatementsClient({
     }
   }
 
+  // ── Category editing ──────────────────────────────────────────────────
+
+  /** Called when user picks a subcategory from the dropdown. */
+  async function handleSubcategoryPick(txId: string, newSubcategory: string) {
+    setEditingCategoryId(null);
+
+    const tx = expandedTransactions.find((t) => t.id === txId);
+    if (!tx) return;
+
+    const parentCategory = getParentCategory(newSubcategory);
+    const pattern = extractMerchantPattern(tx.description);
+
+    // Count how many transactions in the current view share the same merchant pattern
+    const matchCount = expandedTransactions.filter((t) => {
+      const tp = extractMerchantPattern(t.description);
+      return tp === pattern && t.id !== txId;
+    }).length;
+
+    if (matchCount > 0) {
+      // Show confirmation prompt
+      setPendingChange({
+        txId,
+        subcategory: newSubcategory,
+        parentCategory,
+        description: tx.description,
+        matchCount: matchCount + 1, // +1 to include the clicked one
+      });
+    } else {
+      // Only one transaction — apply directly
+      await applyCategory(txId, newSubcategory, false);
+    }
+  }
+
+  /** Apply category change to one or all matching transactions. */
+  async function applyCategory(
+    txId: string,
+    newSubcategory: string,
+    applyToAll: boolean
+  ) {
+    setSavingCategoryId(txId);
+    setPendingChange(null);
+
+    const parentCategory = getParentCategory(newSubcategory);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const tx = expandedTransactions.find((t) => t.id === txId);
+      if (!tx) return;
+
+      const pattern = extractMerchantPattern(tx.description);
+
+      if (applyToAll) {
+        // Bulk update: find all transactions matching this merchant pattern
+        const { data: matchingTxs } = await supabase
+          .from('transactions')
+          .select('id')
+          .eq('client_id', userId)
+          .ilike('description', `%${pattern}%`);
+
+        if (matchingTxs && matchingTxs.length > 0) {
+          const ids = matchingTxs.map((t) => t.id);
+          await supabase
+            .from('transactions')
+            .update({
+              category: parentCategory,
+              subcategory: newSubcategory,
+              needs_homework: false,
+              is_reviewed: true,
+              confidence_score: 0.9,
+            })
+            .in('id', ids);
+        }
+
+        // Optimistic UI: update all matching in the expanded list
+        setExpandedTransactions((prev) =>
+          prev.map((t) => {
+            const tp = extractMerchantPattern(t.description);
+            if (tp === pattern) {
+              return { ...t, category: parentCategory, subcategory: newSubcategory, needsHomework: false };
+            }
+            return t;
+          })
+        );
+
+        // Count how many we updated for the message
+        const updatedCount = expandedTransactions.filter((t) => {
+          const tp = extractMerchantPattern(t.description);
+          return tp === pattern;
+        }).length;
+
+        setMessage({ type: 'success', text: `Applied "${parentCategory} → ${newSubcategory}" to ${updatedCount} transactions.` });
+      } else {
+        // Single update
+        const { error } = await supabase
+          .from('transactions')
+          .update({
+            category: parentCategory,
+            subcategory: newSubcategory,
+            needs_homework: false,
+            is_reviewed: true,
+            confidence_score: 0.9,
+          })
+          .eq('id', txId);
+
+        if (error) {
+          setMessage({ type: 'error', text: `Failed to update: ${error.message}` });
+          return;
+        }
+
+        // Optimistic UI update
+        setExpandedTransactions((prev) =>
+          prev.map((t) =>
+            t.id === txId
+              ? { ...t, category: parentCategory, subcategory: newSubcategory, needsHomework: false }
+              : t
+          )
+        );
+
+        setMessage({ type: 'success', text: `Categorised as "${parentCategory} → ${newSubcategory}".` });
+      }
+
+      // Save the mapping for future auto-categorisation
+      if (tx) {
+        await supabase
+          .from('category_mappings')
+          .upsert(
+            {
+              owner_id: userId,
+              merchant_pattern: pattern,
+              category: parentCategory,
+              subcategory: newSubcategory,
+              confidence_score: 0.9,
+            },
+            { onConflict: 'owner_id,merchant_pattern' }
+          );
+      }
+    } catch {
+      setMessage({ type: 'error', text: 'Category update failed unexpectedly.' });
+    } finally {
+      setSavingCategoryId(null);
+    }
+  }
+
   // ── Delete statement ──────────────────────────────────────────────────
 
+  function requestDelete(statementId: string) {
+    setConfirmingDeleteId(statementId);
+  }
+
+  function cancelDelete() {
+    setConfirmingDeleteId(null);
+  }
+
   async function handleDelete(statementId: string, storagePath?: string) {
+    setConfirmingDeleteId(null);
     setIsDeleting(statementId);
 
     try {
@@ -410,15 +649,91 @@ export function StatementsClient({
     }
   }
 
-  // ── Pagination helpers ────────────────────────────────────────────────
+  // ── Filter + Pagination helpers ────────────────────────────────────────────
+
+  const hasActiveFilters = filterDate || filterDescription || filterCategory || filterSubcategory;
+
+  const filteredTransactions = expandedTransactions.filter((tx) => {
+    if (filterDate && !tx.date.includes(filterDate) && !formatDate(tx.date).toLowerCase().includes(filterDate.toLowerCase())) {
+      return false;
+    }
+    if (filterDescription && !tx.description.toLowerCase().includes(filterDescription.toLowerCase())) {
+      return false;
+    }
+    if (filterCategory && tx.category !== filterCategory) {
+      return false;
+    }
+    if (filterSubcategory && tx.subcategory !== filterSubcategory) {
+      return false;
+    }
+    return true;
+  });
+
+  // Sort filtered results
+  const sortedTransactions = [...filteredTransactions].sort((a, b) => {
+    if (!sortField || !sortDir) return 0;
+
+    let cmp = 0;
+    switch (sortField) {
+      case "date":
+        cmp = a.date.localeCompare(b.date);
+        break;
+      case "description":
+        cmp = a.description.localeCompare(b.description);
+        break;
+      case "category":
+        cmp = (a.category || "").localeCompare(b.category || "");
+        break;
+      case "subcategory":
+        cmp = (a.subcategory || "").localeCompare(b.subcategory || "");
+        break;
+      case "amount":
+        cmp = a.amount - b.amount;
+        break;
+    }
+    return sortDir === "desc" ? -cmp : cmp;
+  });
 
   const totalPages = Math.ceil(
-    expandedTransactions.length / TRANSACTIONS_PAGE_SIZE
+    sortedTransactions.length / TRANSACTIONS_PAGE_SIZE
   );
-  const pagedTransactions = expandedTransactions.slice(
+  const pagedTransactions = sortedTransactions.slice(
     expandedPage * TRANSACTIONS_PAGE_SIZE,
     (expandedPage + 1) * TRANSACTIONS_PAGE_SIZE
   );
+
+  // Get unique values for dropdown filters
+  const uniqueCategories = [...new Set(expandedTransactions.map((tx) => tx.category).filter(Boolean))] as string[];
+  const uniqueSubcategories = [...new Set(expandedTransactions.map((tx) => tx.subcategory).filter(Boolean))] as string[];
+
+  function clearFilters() {
+    setFilterDate("");
+    setFilterDescription("");
+    setFilterCategory("");
+    setFilterSubcategory("");
+    setSortField(null);
+    setSortDir(null);
+    setExpandedPage(0);
+  }
+
+  function toggleSort(field: SortField) {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDir("asc");
+    } else if (sortDir === "asc") {
+      setSortDir("desc");
+    } else {
+      setSortField(null);
+      setSortDir(null);
+    }
+    setExpandedPage(0);
+  }
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ArrowUpDown className="w-3 h-3 opacity-30" />;
+    if (sortDir === "asc") return <ArrowUp className="w-3 h-3 text-lime" />;
+    return <ArrowDown className="w-3 h-3 text-lime" />;
+  }
 
   // ── Currency mismatch warning ─────────────────────────────────────────
 
@@ -441,7 +756,7 @@ export function StatementsClient({
           {uploadPhase === "idle" && (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-6 py-2 bg-lime text-forest font-bold rounded-lg hover:bg-lime/90 transition-all"
+              className="flex items-center gap-2 px-6 py-2 bg-lime text-forest font-bold rounded-lg hover:bg-lime/90 transition-all cursor-pointer"
             >
               <Upload className="w-4 h-4" />
               Upload New
@@ -731,20 +1046,37 @@ export function StatementsClient({
                       </div>
                     )}
 
-                    <button
-                      onClick={() =>
-                        handleDelete(stmt.id, stmt.storagePath)
-                      }
-                      disabled={isDeleting === stmt.id}
-                      className="p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                      title="Delete statement"
-                    >
-                      {isDeleting === stmt.id ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
+                    {confirmingDeleteId === stmt.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-red-400 whitespace-nowrap">
+                          Delete?
+                        </span>
+                        <button
+                          onClick={() =>
+                            handleDelete(stmt.id, stmt.storagePath)
+                          }
+                          className="px-2 py-1 rounded-md text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-colors"
+                        >
+                          Yes
+                        </button>
+                        <button
+                          onClick={cancelDelete}
+                          className="px-2 py-1 rounded-md text-xs text-slate-500 hover:text-white hover:bg-glass transition-colors"
+                        >
+                          No
+                        </button>
+                      </div>
+                    ) : isDeleting === stmt.id ? (
+                      <Loader2 className="w-4 h-4 text-slate-500 animate-spin" />
+                    ) : (
+                      <button
+                        onClick={() => requestDelete(stmt.id)}
+                        className="p-2 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Delete statement"
+                      >
                         <Trash2 className="w-4 h-4" />
-                      )}
-                    </button>
+                      </button>
+                    )}
 
                     {stmt.transactionCount > 0 && (
                       <button
@@ -785,28 +1117,295 @@ export function StatementsClient({
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="border-b border-glass-border text-slate-600 text-xs uppercase tracking-wider">
-                                  <th className="text-left px-6 py-2.5">
-                                    Date
+                                  <th
+                                    className="text-left px-6 py-2.5 cursor-pointer hover:text-slate-400 transition-colors select-none"
+                                    onClick={() => toggleSort("date")}
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      Date <SortIcon field="date" />
+                                    </span>
                                   </th>
-                                  <th className="text-left px-6 py-2.5">
-                                    Description
+                                  <th
+                                    className="text-left px-6 py-2.5 cursor-pointer hover:text-slate-400 transition-colors select-none"
+                                    onClick={() => toggleSort("description")}
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      Description <SortIcon field="description" />
+                                    </span>
                                   </th>
-                                  <th className="text-right px-6 py-2.5">
-                                    Amount
+                                  <th
+                                    className="text-left px-4 py-2.5 cursor-pointer hover:text-slate-400 transition-colors select-none"
+                                    onClick={() => toggleSort("category")}
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      Category <SortIcon field="category" />
+                                    </span>
+                                  </th>
+                                  <th
+                                    className="text-left px-4 py-2.5 cursor-pointer hover:text-slate-400 transition-colors select-none"
+                                    onClick={() => toggleSort("subcategory")}
+                                  >
+                                    <span className="inline-flex items-center gap-1">
+                                      Subcategory <SortIcon field="subcategory" />
+                                    </span>
+                                  </th>
+                                  <th
+                                    className="text-right px-6 py-2.5 cursor-pointer hover:text-slate-400 transition-colors select-none"
+                                    onClick={() => toggleSort("amount")}
+                                  >
+                                    <span className="inline-flex items-center gap-1 justify-end">
+                                      Amount <SortIcon field="amount" />
+                                    </span>
                                   </th>
                                 </tr>
                               </thead>
+                              {/* ── Filter row ── */}
                               <tbody>
-                                {pagedTransactions.map((tx, i) => (
+                                <tr className="border-b border-glass-border bg-glass/30">
+                                  <td className="px-6 py-1.5 min-w-[120px]">
+                                    <div className="relative">
+                                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-600" />
+                                      <input
+                                        type="text"
+                                        placeholder="Date..."
+                                        value={filterDate}
+                                        onChange={(e) => {
+                                          setFilterDate(e.target.value);
+                                          setExpandedPage(0);
+                                        }}
+                                        className="w-full bg-transparent border border-glass-border rounded px-6 py-0.5 text-xs focus:border-lime/30 focus:outline-none placeholder:text-slate-700"
+                                      />
+                                      {filterDate && (
+                                        <button
+                                          onClick={() => { setFilterDate(""); setExpandedPage(0); }}
+                                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 cursor-pointer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-1.5">
+                                    <div className="relative">
+                                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-600" />
+                                      <input
+                                        type="text"
+                                        placeholder="Filter..."
+                                        value={filterDescription}
+                                        onChange={(e) => {
+                                          setFilterDescription(e.target.value);
+                                          setExpandedPage(0);
+                                        }}
+                                        className="w-full bg-transparent border border-glass-border rounded px-6 py-0.5 text-xs focus:border-lime/30 focus:outline-none placeholder:text-slate-700"
+                                      />
+                                      {filterDescription && (
+                                        <button
+                                          onClick={() => { setFilterDescription(""); setExpandedPage(0); }}
+                                          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 cursor-pointer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-1.5">
+                                    <select
+                                      value={filterCategory}
+                                      onChange={(e) => {
+                                        setFilterCategory(e.target.value);
+                                        setExpandedPage(0);
+                                      }}
+                                      className="w-full bg-transparent border border-glass-border rounded px-1 py-0.5 text-xs focus:border-lime/30 focus:outline-none cursor-pointer"
+                                    >
+                                      <option value="">All</option>
+                                      {uniqueCategories.sort().map((cat) => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-4 py-1.5">
+                                    <select
+                                      value={filterSubcategory}
+                                      onChange={(e) => {
+                                        setFilterSubcategory(e.target.value);
+                                        setExpandedPage(0);
+                                      }}
+                                      className="w-full bg-transparent border border-glass-border rounded px-1 py-0.5 text-xs focus:border-lime/30 focus:outline-none cursor-pointer"
+                                    >
+                                      <option value="">All</option>
+                                      {uniqueSubcategories.sort().map((sub) => (
+                                        <option key={sub} value={sub}>{sub}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="px-6 py-1.5 text-right">
+                                    {hasActiveFilters && (
+                                      <button
+                                        onClick={clearFilters}
+                                        className="text-xs text-lime/70 hover:text-lime cursor-pointer"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                                {hasActiveFilters && sortedTransactions.length > 0 && (
+                                  <tr className="border-b-2 border-lime/20 bg-glass/40">
+                                    <td className="px-6 py-2.5 text-xs font-bold text-slate-400" colSpan={4}>
+                                      Subtotal ({sortedTransactions.length} transaction{sortedTransactions.length !== 1 ? "s" : ""})
+                                    </td>
+                                    <td
+                                      className={`px-6 py-2.5 text-right font-bold whitespace-nowrap ${
+                                        sortedTransactions.reduce((sum, tx) => sum + tx.amount, 0) >= 0
+                                          ? "text-emerald-400"
+                                          : "text-red-400"
+                                      }`}
+                                    >
+                                      {formatCurrency(
+                                        sortedTransactions.reduce((sum, tx) => sum + tx.amount, 0),
+                                        stmt.currency
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                                {filteredTransactions.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-600">
+                                      No transactions match your filters.
+                                      {" "}
+                                      <button onClick={clearFilters} className="text-lime/70 hover:text-lime underline cursor-pointer">
+                                        Clear filters
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ) : null}
+                                {pagedTransactions.map((tx) => (
                                   <tr
-                                    key={i}
-                                    className="border-b border-glass-border last:border-0"
+                                    key={tx.id}
+                                    className="border-b border-glass-border last:border-0 hover:bg-glass/20 transition-colors"
                                   >
                                     <td className="px-6 py-2 text-slate-400 whitespace-nowrap">
                                       {formatDate(tx.date)}
                                     </td>
-                                    <td className="px-6 py-2 truncate max-w-[350px]">
+                                    <td className="px-6 py-2 truncate max-w-[240px]">
                                       {tx.description}
+                                    </td>
+                                    {/* ── Category (parent) ── */}
+                                    <td className="px-4 py-2 whitespace-nowrap">
+                                      <button
+                                        onClick={() => setEditingCategoryId(tx.id)}
+                                        className="group cursor-pointer"
+                                        title="Click to change"
+                                      >
+                                        {tx.category ? (
+                                          <span
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border group-hover:brightness-125 transition-all"
+                                            style={{
+                                              backgroundColor: `${getCategoryColour(tx.category)}15`,
+                                              color: getCategoryColour(tx.category),
+                                              borderColor: `${getCategoryColour(tx.category)}30`,
+                                            }}
+                                          >
+                                            {tx.category}
+                                          </span>
+                                        ) : (
+                                          <span className="text-xs text-slate-600 italic">—</span>
+                                        )}
+                                      </button>
+                                    </td>
+                                    {/* ── Subcategory (editable) ── */}
+                                    <td className="px-4 py-2 whitespace-nowrap">
+                                      {savingCategoryId === tx.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 text-lime animate-spin" />
+                                      ) : pendingChange?.txId === tx.id ? (
+                                        /* ── Apply-to-all confirmation ── */
+                                        <div className="flex items-center gap-1.5">
+                                          <span
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border"
+                                            style={{
+                                              backgroundColor: `${getCategoryColour(pendingChange.subcategory)}15`,
+                                              color: getCategoryColour(pendingChange.subcategory),
+                                              borderColor: `${getCategoryColour(pendingChange.subcategory)}30`,
+                                            }}
+                                          >
+                                            {pendingChange.subcategory}
+                                          </span>
+                                          <button
+                                            onClick={() => applyCategory(tx.id, pendingChange.subcategory, false)}
+                                            className="px-2 py-0.5 rounded text-xs font-medium bg-glass border border-glass-border hover:border-lime/30 hover:text-lime transition-all cursor-pointer"
+                                            title="Apply to this transaction only"
+                                          >
+                                            Just this
+                                          </button>
+                                          <button
+                                            onClick={() => applyCategory(tx.id, pendingChange.subcategory, true)}
+                                            className="px-2 py-0.5 rounded text-xs font-medium bg-lime/10 text-lime border border-lime/30 hover:bg-lime/20 transition-all cursor-pointer flex items-center gap-1"
+                                            title={`Apply to all ${pendingChange.matchCount} matching transactions`}
+                                          >
+                                            <Copy className="w-3 h-3" />
+                                            All {pendingChange.matchCount}
+                                          </button>
+                                          <button
+                                            onClick={() => setPendingChange(null)}
+                                            className="px-1.5 py-0.5 rounded text-xs text-slate-600 hover:text-slate-400 transition-colors cursor-pointer"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      ) : editingCategoryId === tx.id ? (
+                                        <select
+                                          autoFocus
+                                          defaultValue={tx.subcategory ?? ""}
+                                          onChange={(e) => {
+                                            if (e.target.value) {
+                                              handleSubcategoryPick(tx.id, e.target.value);
+                                            }
+                                          }}
+                                          onBlur={() => {
+                                            // Small delay to allow pendingChange to be set before blur clears editing
+                                            setTimeout(() => setEditingCategoryId(null), 150);
+                                          }}
+                                          className="bg-glass border border-lime/30 rounded-md px-2 py-1 text-xs font-medium focus:border-lime focus:outline-none focus:ring-1 focus:ring-lime/30 cursor-pointer max-w-[200px]"
+                                        >
+                                          <option value="" className="bg-forest" disabled>
+                                            Select…
+                                          </option>
+                                          {CATEGORY_TAXONOMY.map((parent) => (
+                                            <optgroup key={parent.value} label={parent.label} className="bg-forest text-slate-400">
+                                              {parent.subcategories.map((sub) => (
+                                                <option key={sub.value} value={sub.value} className="bg-forest text-slate-200">
+                                                  {sub.label}
+                                                </option>
+                                              ))}
+                                            </optgroup>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <button
+                                          onClick={() => setEditingCategoryId(tx.id)}
+                                          className="group inline-flex items-center gap-1.5 cursor-pointer"
+                                          title="Click to change subcategory"
+                                        >
+                                          {tx.subcategory ? (
+                                            <span
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border group-hover:brightness-125 transition-all"
+                                              style={{
+                                                backgroundColor: `${getCategoryColour(tx.subcategory)}15`,
+                                                color: getCategoryColour(tx.subcategory),
+                                                borderColor: `${getCategoryColour(tx.subcategory)}30`,
+                                              }}
+                                            >
+                                              <Tag className="w-2.5 h-2.5" />
+                                              {tx.subcategory}
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 group-hover:border-amber-500/40 transition-colors">
+                                              <Pencil className="w-2.5 h-2.5" />
+                                              Categorise
+                                            </span>
+                                          )}
+                                        </button>
+                                      )}
                                     </td>
                                     <td
                                       className={`px-6 py-2 text-right font-medium whitespace-nowrap ${
@@ -828,7 +1427,9 @@ export function StatementsClient({
                             <div className="flex items-center justify-between px-6 py-3 border-t border-glass-border">
                               <p className="text-xs text-slate-600">
                                 Page {expandedPage + 1} of {totalPages} (
-                                {expandedTransactions.length} total)
+                                {hasActiveFilters
+                                  ? `${sortedTransactions.length} of ${expandedTransactions.length} matching`
+                                  : `${expandedTransactions.length} total`})
                               </p>
                               <div className="flex gap-2">
                                 <button

@@ -34,6 +34,7 @@ const CURRENCY_OPTIONS = [
   { code: "ZAR", label: "ZAR (R)", symbol: "R" },
   { code: "SGD", label: "SGD (S$)", symbol: "S$" },
   { code: "HKD", label: "HKD (HK$)", symbol: "HK$" },
+  { code: "BRL", label: "BRL (R$)", symbol: "R$" },
 ] as const;
 
 interface SettingsClientProps {

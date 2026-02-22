@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, ClipboardList, TrendingUp, Settings, LogOut, Wallet } from 'lucide-react';
+import { Home, ClipboardList, TrendingUp, Settings, LogOut, Wallet, Brain } from 'lucide-react';
 
 const navItems = [
   { icon: Home, label: 'Overview', href: '/' },
   { icon: ClipboardList, label: 'Homework', href: '/homework' },
   { icon: TrendingUp, label: 'Insights', href: '/insights' },
+  { icon: Brain, label: 'Intelligence', href: '/intelligence' },
   { icon: Wallet, label: 'Statements', href: '/statements' },
   { icon: Settings, label: 'Settings', href: '/settings' },
 ];
