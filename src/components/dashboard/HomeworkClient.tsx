@@ -71,7 +71,9 @@ export function HomeworkClient({
   const pendingCount = transactions.filter((tx) => !tx.isReviewed).length;
 
   async function handleSave(transactionId: string) {
-    const category = selectedCategories[transactionId];
+    const tx = transactions.find((t) => t.id === transactionId);
+    // Use the user's pick, or fall back to the AI's existing subcategory
+    const category = selectedCategories[transactionId] || tx?.subcategory || null;
     const clientFeedback = feedback[transactionId]?.trim() || null;
 
     if (!category) {
@@ -298,7 +300,7 @@ export function HomeworkClient({
 
                     <button
                       onClick={() => handleSave(tx.id)}
-                      disabled={savingId === tx.id || !selectedCategories[tx.id]}
+                      disabled={savingId === tx.id || (!selectedCategories[tx.id] && !tx.subcategory)}
                       className="mt-6 flex items-center gap-2 px-6 py-2 bg-lime text-forest font-bold rounded-lg hover:bg-lime/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {savingId === tx.id ? (
