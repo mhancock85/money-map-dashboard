@@ -321,11 +321,14 @@ export function StatementsClient({
           .select("merchant_pattern, category, subcategory")
           .eq("owner_id", userId);
 
-        const savedMappings = (rawMappings || []).map((m) => ({
-          pattern: (m.merchant_pattern || "").toLowerCase(),
-          category: m.category,
-          subcategory: m.subcategory,
-        }));
+        const savedMappings = (rawMappings || [])
+          .map((m) => ({
+            pattern: (m.merchant_pattern || "").toLowerCase(),
+            category: m.category,
+            subcategory: m.subcategory,
+          }))
+          // MOST IMPORTANT: sort by longest pattern first so "taka taka james" wins over "bristol"
+          .sort((a, b) => b.pattern.length - a.pattern.length);
 
         console.log(`[upload] Loaded ${savedMappings.length} saved mappings`);
 
