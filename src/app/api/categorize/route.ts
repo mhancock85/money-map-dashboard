@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ categorizations: results });
+    return NextResponse.json({ categorizations: results, mappingsUsed: existingMappings.length });
   } catch (error) {
     console.error("Categorization API error:", error);
     return NextResponse.json(

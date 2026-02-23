@@ -326,7 +326,9 @@ export function StatementsClient({
           console.warn("AI categorization failed, proceeding without categories");
         }
 
-        const { categorizations } = await categorizationResponse.json();
+        const catResponse = await categorizationResponse.json();
+        const categorizations = catResponse.categorizations;
+        console.log(`[upload] Categorised with ${catResponse.mappingsUsed ?? '?'} saved mappings:`, categorizations);
 
         // Build transaction rows with AI categorization
         const rows = parsedResult.transactions.map((tx) => {
