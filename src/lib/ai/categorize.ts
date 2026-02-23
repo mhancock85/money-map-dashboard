@@ -87,6 +87,9 @@ export async function categorizeTransaction(
     const subcategory = exactMatch.subcategory
       ? normaliseCategory(exactMatch.subcategory)
       : category;
+    console.log(
+      `[categorize] ✅ MAPPING HIT: "${transaction.description}" matched pattern "${exactMatch.merchantPattern}" → ${category}/${subcategory}`
+    );
     return {
       category,
       subcategory,
@@ -94,6 +97,10 @@ export async function categorizeTransaction(
       reasoning: `Matched saved mapping: "${exactMatch.merchantPattern}"`,
     };
   }
+
+  console.log(
+    `[categorize] ❌ No mapping for "${transaction.description}" (normalised: "${normalizedDesc}"). Checking ${existingMappings.length} patterns.`
+  );
 
   // ── Layer 2: Built-in merchant dictionary ────────────────────────────
   const merchantMatch = matchMerchant(transaction.description);
