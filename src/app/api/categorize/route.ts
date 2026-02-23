@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { transactions } = await request.json();
+    const { transactions, mappings: clientMappings } = await request.json();
 
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return NextResponse.json(
@@ -25,20 +25,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch user's existing category mappings for pattern matching
-    const { data: mappings } = await supabase
-      .from("category_mappings")
-      .select("merchant_pattern, category, subcategory")
-      .eq("owner_id", user.id);
+    // Prefer client-sent mappings (guaranteed auth context) over server-fetched
+    let existingMappings: { merchantPattern: string; category: string; subcategory: string | null }[];
 
-    const existingMappings = (mappings || []).map((m) => ({
-      merchantPattern: m.merchant_pattern,
-      category: m.category,
-      subcategory: m.subcategory,
-    }));
+    if (Array.isArray(clientMappings) && clientMappings.length > 0) {
+      existingMappings = clientMappings;
+      console.log(`[categorize] Using ${existingMappings.length} client-sent mappings`);
+    } else {
+      // Fallback: fetch server-side
+      const { data: mappings } = await supabase
+        .from("category_mappings")
+        .select("merchant_pattern, category, subcategory")
+        .eq("owner_id", user.id);
+
+      existingMappings = (mappings || []).map((m) => ({
+        merchantPattern: m.merchant_pattern,
+        category: m.category,
+        subcategory: m.subcategory,
+      }));
+      console.log(`[categorize] Server-fetched ${existingMappings.length} mappings`);
+    }
 
     console.log(
-      `[categorize] User ${user.id}: ${existingMappings.length} saved mappings, ${transactions.length} transactions to categorise`,
+      `[categorize] User ${user.id}: ${existingMappings.length} mappings, ${transactions.length} transactions`,
       existingMappings.length > 0
         ? existingMappings.map((m) => `${m.merchantPattern} → ${m.category}/${m.subcategory}`)
         : "(none)"

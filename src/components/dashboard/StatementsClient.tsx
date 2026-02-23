@@ -315,11 +315,28 @@ export function StatementsClient({
       let aiCategorizedCount = 0;
 
       if (!isPdf && parsedResult) {
-        // Call AI categorization API
+        // Fetch user's category mappings client-side (guaranteed auth context)
+        const { data: mappings } = await supabase
+          .from("category_mappings")
+          .select("merchant_pattern, category, subcategory")
+          .eq("owner_id", userId);
+
+        const clientMappings = (mappings || []).map((m) => ({
+          merchantPattern: m.merchant_pattern,
+          category: m.category,
+          subcategory: m.subcategory,
+        }));
+
+        console.log(`[upload] Sending ${clientMappings.length} saved mappings to categorise API`);
+
+        // Call AI categorization API with mappings included
         const categorizationResponse = await fetch("/api/categorize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ transactions: parsedResult.transactions }),
+          body: JSON.stringify({
+            transactions: parsedResult.transactions,
+            mappings: clientMappings,
+          }),
         });
 
         if (!categorizationResponse.ok) {
@@ -328,7 +345,7 @@ export function StatementsClient({
 
         const catResponse = await categorizationResponse.json();
         const categorizations = catResponse.categorizations;
-        console.log(`[upload] Categorised with ${catResponse.mappingsUsed ?? '?'} saved mappings:`, categorizations);
+        console.log(`[upload] Categorised with ${catResponse.mappingsUsed ?? '?'} mappings:`, categorizations);
 
         // Build transaction rows with AI categorization
         const rows = parsedResult.transactions.map((tx) => {
