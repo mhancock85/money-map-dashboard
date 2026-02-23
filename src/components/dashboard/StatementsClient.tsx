@@ -185,6 +185,8 @@ export function StatementsClient({
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [confirmingTxDeleteId, setConfirmingTxDeleteId] = useState<string | null>(null);
   const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   // Feedback
   const [message, setMessage] = useState<{
@@ -406,6 +408,48 @@ export function StatementsClient({
     setParsedResult(null);
     setUploadError(null);
     setUploadCurrency(defaultCurrency);
+  }
+
+  // ── Rename statement ──────────────────────────────────────────────────
+
+  function startRename(stmt: { id: string; filename: string }) {
+    setRenamingId(stmt.id);
+    setRenameValue(stmt.filename);
+  }
+
+  function cancelRename() {
+    setRenamingId(null);
+    setRenameValue("");
+  }
+
+  async function saveRename(statementId: string) {
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      cancelRename();
+      return;
+    }
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const { error } = await supabase
+        .from("statements")
+        .update({ filename: trimmed })
+        .eq("id", statementId);
+
+      if (error) {
+        setMessage({ type: "error", text: `Rename failed: ${error.message}` });
+        return;
+      }
+
+      setStatements((prev) =>
+        prev.map((s) => (s.id === statementId ? { ...s, filename: trimmed } : s))
+      );
+      setMessage({ type: "success", text: "Statement renamed." });
+    } catch {
+      setMessage({ type: "error", text: "Rename failed unexpectedly." });
+    } finally {
+      cancelRename();
+    }
   }
 
   // ── Expand statement → load transactions ──────────────────────────────
@@ -1074,7 +1118,28 @@ export function StatementsClient({
                     <FileText className="w-5 h-5 text-lime shrink-0" />
 
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{stmt.filename}</p>
+                      {renamingId === stmt.id ? (
+                        <input
+                          autoFocus
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveRename(stmt.id);
+                            if (e.key === "Escape") cancelRename();
+                          }}
+                          onBlur={() => saveRename(stmt.id)}
+                          className="w-full bg-forest/50 border border-lime/30 rounded px-2 py-0.5 text-sm font-medium text-white focus:outline-none focus:ring-1 focus:ring-lime/40"
+                        />
+                      ) : (
+                        <p
+                          className="font-medium truncate cursor-pointer hover:text-lime transition-colors"
+                          onClick={() => startRename(stmt)}
+                          title="Click to rename"
+                        >
+                          {stmt.filename}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-500">
                         {formatDate(stmt.createdAt)} · {stmt.currency}
                       </p>
