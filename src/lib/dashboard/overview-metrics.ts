@@ -12,14 +12,31 @@ export interface OverviewChartPoint {
   netWorth: number;
 }
 
+export interface HomeworkItem {
+  id: string;
+  description: string;
+  amount: number;
+  category: string | null;
+}
+
+export interface CoachingInsight {
+  id: string;
+  title: string;
+  body: string;
+  insight_type: "opportunity" | "warning" | "info";
+}
+
 export interface OverviewMetrics {
   fullName: string;
+  userId: string;
   netWorth: number;
   monthlyCashflow: number;
   savingsRate: number;
   pendingHomework: number;
   chartData: OverviewChartPoint[];
   loadError: string | null;
+  homeworkItems: HomeworkItem[];
+  coachingInsights: CoachingInsight[];
 }
 
 const MONTH_WINDOW = 6;
@@ -75,30 +92,51 @@ export async function getOverviewMetrics(
   const rangeStartIso = toISODate(rangeStart);
   const currentMonthIso = toISODate(currentMonthStart);
 
-  const [profileResult, rangeTransactionsResult, preRangeTransactionsResult, homeworkCountResult] =
-    await Promise.all([
-      supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", userId)
-        .maybeSingle(),
-      supabase
-        .from("transactions")
-        .select("amount, transaction_date")
-        .eq("client_id", userId)
-        .gte("transaction_date", rangeStartIso)
-        .order("transaction_date", { ascending: true }),
-      supabase
-        .from("transactions")
-        .select("amount")
-        .eq("client_id", userId)
-        .lt("transaction_date", rangeStartIso),
-      supabase
-        .from("transactions")
-        .select("id", { count: "exact", head: true })
-        .eq("client_id", userId)
-        .eq("needs_homework", true),
-    ]);
+  const [
+    profileResult,
+    rangeTransactionsResult,
+    preRangeTransactionsResult,
+    homeworkCountResult,
+    homeworkItemsResult,
+    insightsResult,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", userId)
+      .maybeSingle(),
+    supabase
+      .from("transactions")
+      .select("amount, transaction_date")
+      .eq("client_id", userId)
+      .gte("transaction_date", rangeStartIso)
+      .order("transaction_date", { ascending: true }),
+    supabase
+      .from("transactions")
+      .select("amount")
+      .eq("client_id", userId)
+      .lt("transaction_date", rangeStartIso),
+    supabase
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", userId)
+      .eq("needs_homework", true),
+    // Fetch top 3 homework items for the overview widget
+    supabase
+      .from("transactions")
+      .select("id, description, amount, category")
+      .eq("client_id", userId)
+      .eq("needs_homework", true)
+      .order("created_at", { ascending: false })
+      .limit(3),
+    // Fetch active coaching insights
+    supabase
+      .from("coaching_insights")
+      .select("id, title, body, insight_type")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false }),
+  ]);
 
   const fullName = profileResult.data?.full_name?.trim() || "Client";
 
@@ -109,18 +147,35 @@ export async function getOverviewMetrics(
   ) {
     return {
       fullName,
+      userId,
       netWorth: 0,
       monthlyCashflow: 0,
       savingsRate: 0,
       pendingHomework: 0,
       chartData: buildEmptyChartData(rangeStart),
       loadError: "Supabase data is unavailable right now. Showing fallback values.",
+      homeworkItems: [],
+      coachingInsights: [],
     };
   }
 
   const rangeTransactions = rangeTransactionsResult.data ?? [];
   const preRangeTransactions = preRangeTransactionsResult.data ?? [];
   const pendingHomework = homeworkCountResult.count ?? 0;
+
+  const homeworkItems: HomeworkItem[] = (homeworkItemsResult.data ?? []).map((row) => ({
+    id: row.id,
+    description: row.description,
+    amount: Number(row.amount),
+    category: row.category,
+  }));
+
+  const coachingInsights: CoachingInsight[] = (insightsResult.data ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    insight_type: row.insight_type as "opportunity" | "warning" | "info",
+  }));
 
   const monthKeys = Array.from({ length: MONTH_WINDOW }, (_, index) =>
     monthKey(addMonths(rangeStart, index))
@@ -169,11 +224,14 @@ export async function getOverviewMetrics(
 
   return {
     fullName,
+    userId,
     netWorth: roundToTwoDecimals(chartData[chartData.length - 1]?.netWorth ?? baseNetWorth),
     monthlyCashflow: roundToTwoDecimals(monthlyCashflow),
     savingsRate: roundToTwoDecimals(savingsRate),
     pendingHomework,
     chartData,
     loadError: null,
+    homeworkItems,
+    coachingInsights,
   };
 }

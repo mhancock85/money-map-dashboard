@@ -52,6 +52,47 @@ export type Database = {
           },
         ]
       }
+      coaching_insights: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          insight_type: string
+          is_active: boolean
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          insight_type?: string
+          is_active?: boolean
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          insight_type?: string
+          is_active?: boolean
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coaching_insights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           coach_id: string | null
@@ -332,4 +373,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

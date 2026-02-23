@@ -9,7 +9,7 @@ function cn(...inputs: ClassValue[]) {
 interface GlassCardProps {
   children: ReactNode;
   className?: string;
-  title?: string;
+  title?: ReactNode;
 }
 
 export function GlassCard({ children, className, title }: GlassCardProps) {
