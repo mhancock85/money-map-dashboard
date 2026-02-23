@@ -37,6 +37,13 @@ export async function POST(request: NextRequest) {
       subcategory: m.subcategory,
     }));
 
+    console.log(
+      `[categorize] User ${user.id}: ${existingMappings.length} saved mappings, ${transactions.length} transactions to categorise`,
+      existingMappings.length > 0
+        ? existingMappings.map((m) => `${m.merchantPattern} → ${m.category}/${m.subcategory}`)
+        : "(none)"
+    );
+
     // Categorize all transactions using AI + pattern matching
     const categorizations = await categorizeTransactions(
       transactions as ParsedTransaction[],

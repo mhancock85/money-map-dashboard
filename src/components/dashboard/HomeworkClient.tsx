@@ -38,19 +38,18 @@ function formatDate(isoDate: string): string {
 }
 
 function extractMerchantPattern(description: string): string {
-  // Remove common noise words and extract core merchant identifier
-  const cleaned = description
-    .trim()
-    .replace(/\b(payment|transfer|card|debit|credit|purchase|transaction)\b/gi, "")
-    .replace(/[^\w\s]/g, " ") // Remove special chars
-    .replace(/\s+/g, " ") // Normalize spaces
-    .trim();
-
-  // Take first 3 meaningful words or first word if it's long
-  const words = cleaned.split(" ").filter((w) => w.length > 2);
-  if (words.length === 0) return description.slice(0, 20); // Fallback
-
-  return words[0].length >= 6 ? words[0] : words.slice(0, 3).join(" ");
+  const noise = [
+    "payment", "transfer", "direct debit", "standing order", "card",
+    "pos", "purchase", "contactless", "debit", "credit", "ref",
+    "to", "from", "gbp", "usd", "eur",
+  ];
+  const words = description
+    .replace(/[^a-zA-Z0-9\s&'.-]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !noise.includes(w.toLowerCase()));
+  if (words.length === 0) return description.trim().slice(0, 30).toLowerCase();
+  if (words[0] && words[0].length >= 6) return words[0].toLowerCase();
+  return words.slice(0, 3).join(" ").toLowerCase();
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
