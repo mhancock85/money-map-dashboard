@@ -421,7 +421,7 @@ export function InsightsClient({
           {/* Category Breakdown */}
           <GlassCard title="Category Breakdown">
             {allCategories.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
                 {allCategories.map((cat) => (
                   <div key={cat.category}>
                     <div className="flex items-center justify-between text-sm mb-1">
