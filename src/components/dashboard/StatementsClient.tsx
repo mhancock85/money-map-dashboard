@@ -315,44 +315,72 @@ export function StatementsClient({
       let aiCategorizedCount = 0;
 
       if (!isPdf && parsedResult) {
-        // Fetch user's category mappings client-side (guaranteed auth context)
-        const { data: mappings } = await supabase
+        // ── Step A: Fetch user's saved category mappings (client-side) ──
+        const { data: rawMappings } = await supabase
           .from("category_mappings")
           .select("merchant_pattern, category, subcategory")
           .eq("owner_id", userId);
 
-        const clientMappings = (mappings || []).map((m) => ({
-          merchantPattern: m.merchant_pattern,
+        const savedMappings = (rawMappings || []).map((m) => ({
+          pattern: (m.merchant_pattern || "").toLowerCase(),
           category: m.category,
           subcategory: m.subcategory,
         }));
 
-        console.log(`[upload] Sending ${clientMappings.length} saved mappings to categorise API`);
+        console.log(`[upload] Loaded ${savedMappings.length} saved mappings`);
 
-        // Call AI categorization API with mappings included
-        const categorizationResponse = await fetch("/api/categorize", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transactions: parsedResult.transactions,
-            mappings: clientMappings,
-          }),
-        });
+        // ── Step B: Match locally first, collect unmatched for AI ───────
+        type LocalResult = { category: string; subcategory: string; confidence: number; needsHomework: boolean };
+        const localResults = new Map<string, LocalResult>();
+        const unmatchedTransactions: typeof parsedResult.transactions = [];
 
-        if (!categorizationResponse.ok) {
-          console.warn("AI categorization failed, proceeding without categories");
+        for (const tx of parsedResult.transactions) {
+          const normDesc = tx.description.trim().toLowerCase();
+          const match = savedMappings.find((m) => m.pattern && normDesc.includes(m.pattern));
+
+          if (match) {
+            const key = `${tx.date}-${tx.description}`;
+            const cat = normaliseCategory(match.category);
+            const sub = match.subcategory ? normaliseCategory(match.subcategory) : cat;
+            localResults.set(key, { category: cat, subcategory: sub, confidence: 0.95, needsHomework: false });
+            console.log(`[upload] ✅ Local match: "${tx.description}" → ${cat}/${sub} (pattern: "${match.pattern}")`);
+          } else {
+            unmatchedTransactions.push(tx);
+          }
         }
 
-        const catResponse = await categorizationResponse.json();
-        const categorizations = catResponse.categorizations;
-        console.log(`[upload] Categorised with ${catResponse.mappingsUsed ?? '?'} mappings:`, categorizations);
+        console.log(`[upload] ${localResults.size} matched locally, ${unmatchedTransactions.length} need AI`);
 
-        // Build transaction rows with AI categorization
+        // ── Step C: Call AI only for unmatched transactions ─────────────
+        let aiCategorizations: Record<string, { category: string; subcategory: string; confidence: number; needsHomework: boolean }> = {};
+
+        if (unmatchedTransactions.length > 0) {
+          try {
+            const categorizationResponse = await fetch("/api/categorize", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ transactions: unmatchedTransactions }),
+            });
+
+            if (categorizationResponse.ok) {
+              const catResponse = await categorizationResponse.json();
+              aiCategorizations = catResponse.categorizations || {};
+            } else {
+              console.warn("AI categorization failed, proceeding with local matches only");
+            }
+          } catch (err) {
+            console.warn("AI categorization error:", err);
+          }
+        }
+
+        // ── Step D: Merge local + AI results and build rows ────────────
         const rows = parsedResult.transactions.map((tx) => {
           const key = `${tx.date}-${tx.description}`;
-          const aiResult = categorizations?.[key];
+          const localMatch = localResults.get(key);
+          const aiResult = aiCategorizations[key];
+          const result = localMatch || aiResult;
 
-          if (aiResult && !aiResult.needsHomework) {
+          if (result && !result.needsHomework) {
             aiCategorizedCount++;
           }
 
@@ -362,10 +390,10 @@ export function StatementsClient({
             transaction_date: tx.date,
             description: tx.description,
             amount: tx.amount,
-            category: aiResult?.category ? normaliseCategory(aiResult.category) : null,
-            subcategory: aiResult?.subcategory || null,
-            confidence_score: aiResult?.confidence || null,
-            needs_homework: aiResult ? aiResult.needsHomework : true,
+            category: result?.category ? normaliseCategory(result.category) : null,
+            subcategory: result?.subcategory || null,
+            confidence_score: result?.confidence || null,
+            needs_homework: result ? result.needsHomework : true,
           };
         });
 

@@ -3,6 +3,13 @@ import { categorizeTransactions } from "@/lib/ai/categorize";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { ParsedTransaction } from "@/lib/dashboard/csv-parser";
 
+/**
+ * POST /api/categorize
+ *
+ * Accepts transactions that have NOT already been matched by saved
+ * mappings on the client side.  Only these "unknown" transactions
+ * are sent to the merchant-rules dictionary and Gemini AI.
+ */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createServerSupabaseClient();
@@ -16,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { transactions, mappings: clientMappings } = await request.json();
+    const { transactions } = await request.json();
 
     if (!Array.isArray(transactions) || transactions.length === 0) {
       return NextResponse.json(
@@ -25,38 +32,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Prefer client-sent mappings (guaranteed auth context) over server-fetched
-    let existingMappings: { merchantPattern: string; category: string; subcategory: string | null }[];
-
-    if (Array.isArray(clientMappings) && clientMappings.length > 0) {
-      existingMappings = clientMappings;
-      console.log(`[categorize] Using ${existingMappings.length} client-sent mappings`);
-    } else {
-      // Fallback: fetch server-side
-      const { data: mappings } = await supabase
-        .from("category_mappings")
-        .select("merchant_pattern, category, subcategory")
-        .eq("owner_id", user.id);
-
-      existingMappings = (mappings || []).map((m) => ({
-        merchantPattern: m.merchant_pattern,
-        category: m.category,
-        subcategory: m.subcategory,
-      }));
-      console.log(`[categorize] Server-fetched ${existingMappings.length} mappings`);
-    }
-
     console.log(
-      `[categorize] User ${user.id}: ${existingMappings.length} mappings, ${transactions.length} transactions`,
-      existingMappings.length > 0
-        ? existingMappings.map((m) => `${m.merchantPattern} → ${m.category}/${m.subcategory}`)
-        : "(none)"
+      `[categorize] User ${user.id}: ${transactions.length} unmatched transactions to categorise via AI`
     );
 
-    // Categorize all transactions using AI + pattern matching
+    // No saved mappings passed — the client already handled those.
+    // Only merchant-rules and Gemini AI run here.
     const categorizations = await categorizeTransactions(
       transactions as ParsedTransaction[],
-      existingMappings
+      [] // empty mappings — client already applied them
     );
 
     // Convert Map to object for JSON response
@@ -70,7 +54,7 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ categorizations: results, mappingsUsed: existingMappings.length });
+    return NextResponse.json({ categorizations: results });
   } catch (error) {
     console.error("Categorization API error:", error);
     return NextResponse.json(
