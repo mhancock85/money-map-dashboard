@@ -183,6 +183,8 @@ export function StatementsClient({
   const [isDragging, setIsDragging] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [confirmingTxDeleteId, setConfirmingTxDeleteId] = useState<string | null>(null);
+  const [deletingTxId, setDeletingTxId] = useState<string | null>(null);
 
   // Feedback
   const [message, setMessage] = useState<{
@@ -646,6 +648,54 @@ export function StatementsClient({
       setMessage({ type: "error", text: "Delete failed unexpectedly." });
     } finally {
       setIsDeleting(null);
+    }
+  }
+
+  // ── Delete individual transaction ─────────────────────────────────────
+
+  async function deleteTransaction(txId: string) {
+    setDeletingTxId(txId);
+    setConfirmingTxDeleteId(null);
+
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const tx = expandedTransactions.find((t) => t.id === txId);
+
+      const { error } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", txId);
+
+      if (error) {
+        setMessage({ type: "error", text: `Delete failed: ${error.message}` });
+        return;
+      }
+
+      // Remove from expanded list
+      setExpandedTransactions((prev) => prev.filter((t) => t.id !== txId));
+
+      // Update statement counts optimistically
+      if (expandedId && tx) {
+        setStatements((prev) =>
+          prev.map((s) => {
+            if (s.id !== expandedId) return s;
+            const newCount = Math.max(0, s.transactionCount - 1);
+            const amt = tx.amount;
+            return {
+              ...s,
+              transactionCount: newCount,
+              totalIn: amt >= 0 ? Number((s.totalIn - amt).toFixed(2)) : s.totalIn,
+              totalOut: amt < 0 ? Number((s.totalOut - Math.abs(amt)).toFixed(2)) : s.totalOut,
+            };
+          })
+        );
+      }
+
+      setMessage({ type: "success", text: "Transaction deleted." });
+    } catch {
+      setMessage({ type: "error", text: "Delete failed unexpectedly." });
+    } finally {
+      setDeletingTxId(null);
     }
   }
 
@@ -1157,6 +1207,7 @@ export function StatementsClient({
                                       Amount <SortIcon field="amount" />
                                     </span>
                                   </th>
+                                  <th className="w-10 px-2 py-2.5"></th>
                                 </tr>
                               </thead>
                               {/* ── Filter row ── */}
@@ -1248,6 +1299,7 @@ export function StatementsClient({
                                       </button>
                                     )}
                                   </td>
+                                  <td></td>
                                 </tr>
                                 {hasActiveFilters && sortedTransactions.length > 0 && (
                                   <tr className="border-b-2 border-lime/20 bg-glass/40">
@@ -1266,11 +1318,12 @@ export function StatementsClient({
                                         stmt.currency
                                       )}
                                     </td>
+                                    <td></td>
                                   </tr>
                                 )}
                                 {filteredTransactions.length === 0 ? (
                                   <tr>
-                                    <td colSpan={5} className="px-6 py-8 text-center text-sm text-slate-600">
+                                    <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-600">
                                       No transactions match your filters.
                                       {" "}
                                       <button onClick={clearFilters} className="text-lime/70 hover:text-lime underline cursor-pointer">
@@ -1282,7 +1335,7 @@ export function StatementsClient({
                                 {pagedTransactions.map((tx) => (
                                   <tr
                                     key={tx.id}
-                                    className="border-b border-glass-border last:border-0 hover:bg-glass/20 transition-colors"
+                                    className="group border-b border-glass-border last:border-0 hover:bg-glass/20 transition-colors"
                                   >
                                     <td className="px-6 py-2 text-slate-400 whitespace-nowrap">
                                       {formatDate(tx.date)}
@@ -1415,6 +1468,37 @@ export function StatementsClient({
                                       }`}
                                     >
                                       {formatCurrency(tx.amount, stmt.currency)}
+                                    </td>
+                                    {/* ── Delete transaction ── */}
+                                    <td className="px-2 py-2 text-center">
+                                      {deletingTxId === tx.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 text-red-400 animate-spin mx-auto" />
+                                      ) : confirmingTxDeleteId === tx.id ? (
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => deleteTransaction(tx.id)}
+                                            className="cursor-pointer px-1.5 py-0.5 rounded text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors"
+                                            title="Confirm delete"
+                                          >
+                                            Yes
+                                          </button>
+                                          <button
+                                            onClick={() => setConfirmingTxDeleteId(null)}
+                                            className="cursor-pointer px-1.5 py-0.5 rounded text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                                            title="Cancel"
+                                          >
+                                            No
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <button
+                                          onClick={() => setConfirmingTxDeleteId(tx.id)}
+                                          className="cursor-pointer opacity-0 group-hover:opacity-100 p-1 rounded text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                          title="Delete transaction"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </td>
                                   </tr>
                                 ))}
